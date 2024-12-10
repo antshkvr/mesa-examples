@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 
 import mesa
@@ -76,6 +77,7 @@ class TSPGraph:
                 g.add_edge(u, v)
 
         return cls(g)
+
 
 
 class AntTSP(CellAgent):
@@ -157,6 +159,7 @@ class AntTSP(CellAgent):
         self._traveled_distance = 0
 
 
+
 class AcoTspModel(mesa.Model):
     """
     The model class holds the model-level attributes, manages the agents, and generally handles
@@ -213,43 +216,35 @@ class AcoTspModel(mesa.Model):
 
         self.running = True
 
-    def update_pheromone(self, q: float = 100, ro: float = 0.5):
-        # tau_ij(t+1) = (1-ro)*tau_ij(t) + delta_tau_ij(t)
-        # delta_tau_ij(t) = sum_k^M {Q/L^k} * I[i,j \in T^k]
+    ''' Зміна значень випаровування феромонів в залежності від ітерації'''
+
+    def update_pheromone(self, q: float = 100):
+        ro = max(0.1, 0.5 - (self.num_steps / self.max_steps) * 0.4)  # Динамічне ro
         delta_tau_ij = {}
         for k, agent in enumerate(self.agents):
             delta_tau_ij[k] = agent.calculate_pheromone_delta(q)
-
         for i, j in self.grid.G.edges():
-            # Evaporate
             tau_ij = (1 - ro) * self.grid.G[i][j]["pheromone"]
-            # Add ant's contribution
             for k, delta_tau_ij_k in delta_tau_ij.items():
                 tau_ij += delta_tau_ij_k.get((i, j), 0.0)
-
             self.grid.G[i][j]["pheromone"] = tau_ij
 
     def step(self):
-        """
-        A model step. Used for activating the agents and collecting data.
-        """
         self.agents.shuffle_do("step")
         self.update_pheromone()
-
-        # Check len of cities visited by an agent
+        ''' Зупинка при стабілюванні моделі'''
         best_instance_iter = float("inf")
         for agent in self.agents:
-            # Check for best path
             if agent.tsp_distance < self.best_distance:
                 self.best_distance = agent.tsp_distance
                 self.best_path = agent.tsp_solution
-
             if agent.tsp_distance < best_instance_iter:
                 best_instance_iter = agent.tsp_distance
 
         self.best_distance_iter = best_instance_iter
 
-        if self.num_steps >= self.max_steps:
+        if self.num_steps >= self.max_steps or abs(self.best_distance_iter - self.best_distance) < 1e-6:
             self.running = False
 
+        self.num_steps += 1
         self.datacollector.collect(self)
